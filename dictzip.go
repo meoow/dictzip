@@ -28,10 +28,12 @@ func Write(r io.Reader, filename string, level int) error {
 
 	dirname := path.Dir(filename)
 	root := path.Base(filename)
+
 	fptmp, err := ioutil.TempFile(dirname, root)
 	if err != nil {
 		return err
 	}
+
 	defer func(name string) {
 		fptmp.Close()
 		os.Remove(name)
@@ -44,11 +46,12 @@ func Write(r io.Reader, filename string, level int) error {
 	if err != nil {
 		return err
 	}
-	sizes := make([]int64, 0)
+	sizes := make([]int64, 0, 1)
 	b := make([]byte, blocksize)
 	total := int64(0)
-	eof := false
-	for !eof {
+
+	for eof := false; !eof; {
+
 		n, err := io.ReadFull(r, b)
 		if err != nil {
 			if err != io.EOF && err != io.ErrUnexpectedEOF {
@@ -57,6 +60,7 @@ func Write(r io.Reader, filename string, level int) error {
 				eof = true
 			}
 		}
+
 		if n > 0 {
 			crc.Write(b[:n])
 			isize += n
@@ -66,9 +70,8 @@ func Write(r io.Reader, filename string, level int) error {
 			fw.Reset(fptmp)
 
 			s, _ := fptmp.Stat()
-			l := s.Size()
-			sizes = append(sizes, l-total)
-			total = l
+			sizes = append(sizes, s.Size()-total)
+			total = s.Size()
 		}
 	}
 	fw.Close()
@@ -79,35 +82,47 @@ func Write(r io.Reader, filename string, level int) error {
 	}
 	defer fp.Close()
 
-	xfl := byte(0)
+	var xfl byte
 	if level == flate.BestCompression {
 		xfl = 2
 	} else if level == flate.BestSpeed {
 		xfl = 4
 	}
+
 	now := time.Now().Unix()
-	_, err = fp.Write([]byte{
+
+	if _, err = fp.Write([]byte{
 		31, 139, 8, 4,
-		byte(now & 255), byte((now >> 8) & 255), byte((now >> 16) & 255), byte((now >> 24) & 255),
-		xfl, 255})
-	if err != nil {
+		byte(now & 255),
+		byte((now >> 8) & 255),
+		byte((now >> 16) & 255),
+		byte((now >> 24) & 255),
+		xfl, 255}); err != nil {
 		return err
 	}
 
 	xlen := 10 + 2*len(sizes)
 	ln := 6 + 2*len(sizes)
-	_, err = fp.Write([]byte{
-		byte(xlen & 255), byte((xlen >> 8) & 255),
-		'R', 'A', byte(ln & 255), byte((ln >> 8) & 255),
-		1, 0,
-		byte(blocksize & 255), byte((blocksize >> 8) & 255),
-		byte(len(sizes) & 255), byte((len(sizes) >> 8) & 255)})
-	if err != nil {
+	if _, err = fp.Write([]byte{
+		byte(xlen & 255),
+		byte((xlen >> 8) & 255),
+		'R',
+		'A',
+		byte(ln & 255),
+		byte((ln >> 8) & 255),
+		1,
+		0,
+		byte(blocksize & 255),
+		byte((blocksize >> 8) & 255),
+		byte(len(sizes) & 255),
+		byte((len(sizes) >> 8) & 255)}); err != nil {
 		return err
 	}
+
 	for _, o := range sizes {
-		_, err = fp.Write([]byte{byte(o & 255), byte((o >> 8) & 255)})
-		if err != nil {
+		if _, err = fp.Write([]byte{
+			byte(o & 255),
+			byte((o >> 8) & 255)}); err != nil {
 			return err
 		}
 	}
@@ -116,11 +131,16 @@ func Write(r io.Reader, filename string, level int) error {
 	io.Copy(fp, fptmp)
 
 	c := crc.Sum32()
-	_, err = fp.Write([]byte{
-		byte(c & 255), byte((c >> 8) & 255), byte((c >> 16) & 255), byte((c >> 24) & 255),
-		byte(isize & 255), byte((isize >> 8) & 255), byte((isize >> 16) & 255), byte((isize >> 24) & 255),
-	})
-	if err != nil {
+	if _, err = fp.Write([]byte{
+		byte(c & 255),
+		byte((c >> 8) & 255),
+		byte((c >> 16) & 255),
+		byte((c >> 24) & 255),
+		byte(isize & 255),
+		byte((isize >> 8) & 255),
+		byte((isize >> 16) & 255),
+		byte((isize >> 24) & 255),
+	}); err != nil {
 		return err
 	}
 
